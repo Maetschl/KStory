@@ -1,0 +1,32 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://kstory.dev/schema/keys/1",
+  "title": "KStory key registry schema 1",
+  "type": "object",
+  "required": ["schema_version", "source_locale", "target_locales", "entries"],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "source_locale": { "const": "en" },
+    "target_locales": { "type": "array", "items": { "type": "string" } },
+    "entries": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "required": ["type"],
+        "properties": {
+          "type": { "type": "string" },
+          "story_id": { "type": ["string", "null"] },
+          "quest_id": { "type": ["string", "null"] },
+          "dialogue_id": { "type": ["string", "null"] },
+          "owner_id": { "type": ["string", "null"] },
+          "speaker_id": { "type": ["string", "null"] },
+          "variables": { "type": "array", "items": { "type": "string" } },
+          "tokens": { "type": "array", "items": { "type": "string" } },
+          "orphaned": { "type": "boolean" }
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  "additionalProperties": false
+}

@@ -1,0 +1,51 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://kstory.dev/schema/content/1",
+  "title": "KStory content catalog schema 1",
+  "type": "object",
+  "required": ["schema_version"],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "stories": { "$ref": "#/$defs/definitions" },
+    "dialogues": { "$ref": "#/$defs/definitions" },
+    "quests": { "$ref": "#/$defs/definitions" },
+    "items": { "$ref": "#/$defs/definitions" },
+    "entities": { "$ref": "#/$defs/definitions" },
+    "callbacks": { "$ref": "#/$defs/definitions" }
+  },
+  "$defs": {
+    "definitions": {
+      "type": "object",
+      "additionalProperties": { "type": "object" }
+    },
+    "node": {
+      "type": "object",
+      "required": ["node_type", "payload"],
+      "properties": {
+        "node_type": {
+          "enum": ["dialogue", "show_item", "show_icon", "choice", "condition", "action", "quest_start", "quest_update", "scene_transition", "event", "end"]
+        },
+        "payload": {
+          "type": "object",
+          "required": ["type"],
+          "properties": { "type": { "type": "string" } },
+          "additionalProperties": true
+        },
+        "next": { "type": "array", "items": { "type": "string" } }
+      },
+      "additionalProperties": true
+    },
+    "dialogueLine": {
+      "type": "object",
+      "required": ["id", "kind", "key"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "kind": { "const": "text" },
+        "key": { "type": "string", "minLength": 1 },
+        "speaker": { "type": "string" },
+        "variables": { "type": "array", "items": { "type": "string" } }
+      },
+      "additionalProperties": true
+    }
+  }
+}

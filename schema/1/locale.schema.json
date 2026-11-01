@@ -1,0 +1,27 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://kstory.dev/schema/locale/1",
+  "title": "KStory locale schema 1",
+  "type": "object",
+  "required": ["schema_version", "locale", "entries"],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "locale": { "type": "string", "minLength": 2 },
+    "entries": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "required": ["text", "status", "source_hash", "text_hash"],
+        "properties": {
+          "text": { "type": "string" },
+          "status": { "enum": ["source", "waiting_for_translation", "on_review", "accepted"] },
+          "source_hash": { "type": "string" },
+          "text_hash": { "type": "string" },
+          "translated_by": { "type": ["string", "null"] }
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  "additionalProperties": false
+}
