@@ -128,15 +128,15 @@ fn App() -> Element {
     let mut section = use_signal(|| Section::Stories);
     let view = use_signal(|| StoryView::Graph);
     let mut locale = use_signal(|| "es".to_string());
-    let selected_story = use_signal(|| initial_story);
-    let selected_node = use_signal(|| initial_node.clone());
-    let reader_node = use_signal(|| initial_node);
+    let mut selected_story = use_signal(|| initial_story);
+    let mut selected_node = use_signal(|| initial_node.clone());
+    let mut reader_node = use_signal(|| initial_node);
     let reader_history = use_signal(Vec::<String>::new);
-    let selected_connection = use_signal(|| None::<String>);
+    let mut selected_connection = use_signal(|| None::<String>);
     let pending_connection = use_signal(|| None::<String>);
     let content_search = use_signal(String::new);
     let key_search = use_signal(String::new);
-    let selected_key = use_signal(|| None::<String>);
+    let mut selected_key = use_signal(|| None::<String>);
     let translation_draft = use_signal(String::new);
     let translation_filters = use_signal(load_translation_filter_preferences);
     let translation_panel_width = use_signal(|| TRANSLATION_PANEL_DEFAULT_WIDTH);
@@ -191,6 +191,35 @@ fn App() -> Element {
                         }
                     }
                     span { class: "locale-active", "Active: {locale_name(&locale_value)}" }
+                    button {
+                        class: "button button-secondary",
+                        onclick: move |_| {
+                            let Some(path) = rfd::FileDialog::new()
+                                .add_filter("KStory project", &["kstory"])
+                                .pick_file()
+                            else {
+                                return;
+                            };
+                            match Store::load(path) {
+                                Ok(mut opened) => match opened.sync() {
+                                    Ok(_) => {
+                                        let story_id = opened.content.stories.keys().next().cloned().unwrap_or_default();
+                                        let node_id = opened.content.stories.get(&story_id).map(|story| story.entry_node_id.clone()).unwrap_or_default();
+                                        store.set(opened);
+                                        selected_story.set(story_id);
+                                        selected_node.set(node_id.clone());
+                                        reader_node.set(node_id);
+                                        selected_connection.set(None);
+                                        selected_key.set(None);
+                                        notify("Project opened.".into(), false, &mut notification, &mut notification_error);
+                                    }
+                                    Err(error) => notify(error.to_string(), true, &mut notification, &mut notification_error),
+                                },
+                                Err(error) => notify(error.to_string(), true, &mut notification, &mut notification_error),
+                            }
+                        },
+                        "Open project"
+                    }
                     button {
                         class: "button button-secondary",
                         onclick: move |_| {
