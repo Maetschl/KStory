@@ -136,15 +136,6 @@ impl ProjectPaths {
         })
     }
 
-    pub fn manifest(&self) -> Option<Result<ProjectManifest, String>> {
-        let path = self.manifest_path.as_ref()?;
-        let text = match fs::read_to_string(path) {
-            Ok(text) => text,
-            Err(error) => return Some(Err(error.to_string())),
-        };
-        Some(serde_json::from_str(&text).map_err(|error| error.to_string()))
-    }
-
     pub fn locale_file(&self, locale: &str) -> PathBuf {
         self.locales.join(format!("{locale}.json"))
     }
