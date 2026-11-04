@@ -1,7 +1,9 @@
 use super::{
-    content, AppError, ConnectionRequest, EntryViewModel, FilterState, Store, ACCEPTED, ON_REVIEW,
-    WAITING,
+    content, AppError, ConnectionRequest, EditorSession, EntryViewModel, FilterState, Store,
+    ACCEPTED, ON_REVIEW, WAITING,
 };
+#[cfg(any(target_os = "windows", target_os = "linux", target_os = "macos"))]
+use dioxus::desktop::{muda, use_muda_event_handler};
 use dioxus::desktop::{Config, LogicalSize, WindowBuilder};
 use dioxus::prelude::*;
 use serde::{Deserialize, Serialize};
@@ -23,7 +25,7 @@ use translations::*;
 
 #[derive(Clone)]
 struct GuiContext {
-    store: Store,
+    store: EditorSession,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -71,6 +73,45 @@ const TRANSLATION_PANEL_DEFAULT_WIDTH: f64 = 340.0;
 const TRANSLATION_PANEL_MIN_WIDTH: f64 = 260.0;
 const TRANSLATION_PANEL_MAX_WIDTH: f64 = 520.0;
 
+#[cfg(any(target_os = "windows", target_os = "linux", target_os = "macos"))]
+fn editor_menu() -> muda::Menu {
+    use muda::accelerator::{Accelerator, Code, Modifiers, CMD_OR_CTRL};
+    use muda::{Menu, MenuItem, Submenu};
+
+    let file = Submenu::new("File", true);
+    let save = MenuItem::with_id(
+        "kstory.save",
+        "Save",
+        true,
+        Some(Accelerator::new(Some(CMD_OR_CTRL), Code::KeyS)),
+    );
+    file.append_items(&[&save]).expect("file menu can be built");
+
+    let edit = Submenu::new("Edit", true);
+    let undo = MenuItem::with_id(
+        "kstory.undo",
+        "Undo",
+        true,
+        Some(Accelerator::new(Some(CMD_OR_CTRL), Code::KeyZ)),
+    );
+    let redo = MenuItem::with_id(
+        "kstory.redo",
+        "Redo",
+        true,
+        Some(Accelerator::new(
+            Some(CMD_OR_CTRL | Modifiers::SHIFT),
+            Code::KeyZ,
+        )),
+    );
+    edit.append_items(&[&undo, &redo])
+        .expect("edit menu can be built");
+
+    let menu = Menu::new();
+    menu.append_items(&[&file, &edit])
+        .expect("editor menu can be built");
+    menu
+}
+
 fn translation_preferences_path() -> Option<PathBuf> {
     dirs::config_dir().map(|directory| directory.join("KStory").join("translation-filters.json"))
 }
@@ -101,14 +142,20 @@ fn save_translation_filter_preferences(
 pub fn run(root: PathBuf) -> Result<(), AppError> {
     let mut store = Store::load(&root)?;
     let _ = store.sync()?;
-    let config = Config::new().with_window(
+    let mut config = Config::new().with_window(
         WindowBuilder::new()
             .with_title("KStory")
             .with_inner_size(LogicalSize::new(1440.0, 900.0))
             .with_min_inner_size(LogicalSize::new(1040.0, 680.0)),
     );
+    #[cfg(any(target_os = "windows", target_os = "linux", target_os = "macos"))]
+    {
+        config = config.with_menu(editor_menu());
+    }
     LaunchBuilder::desktop()
-        .with_context(GuiContext { store })
+        .with_context(GuiContext {
+            store: EditorSession::new(store),
+        })
         .with_cfg(config)
         .launch(App);
     Ok(())
@@ -151,13 +198,14 @@ fn App() -> Element {
     let translation_panel_width = use_signal(|| TRANSLATION_PANEL_DEFAULT_WIDTH);
     let resizing_translation_panel = use_signal(|| false);
     let mut dirty = use_signal(|| false);
+    let mut settings_open = use_signal(|| false);
     let mut notification = use_signal(|| "Catalog loaded".to_string());
     let mut notification_error = use_signal(|| false);
     let collapsed_folders = use_signal(BTreeSet::<String>::new);
     let mut explorer_width = use_signal(|| 300.0_f64);
     let mut resizing_explorer = use_signal(|| false);
 
-    let store_snapshot = store.read().clone();
+    let store_snapshot = store.read().store_snapshot();
     let story_id = selected_story.read().clone();
     let story = store_snapshot.content.stories.get(&story_id).cloned();
     let locale_value = locale.read().clone();
@@ -165,6 +213,67 @@ fn App() -> Element {
     let selected_connection_id = selected_connection.read().clone();
     let section_value = *section.read();
     let view_value = *view.read();
+    let preferences = store.read().preferences().clone();
+    let can_undo = store.read().can_undo();
+    let can_redo = store.read().can_redo();
+    let undo_label = store.read().undo_label().unwrap_or("Undo").to_string();
+    let redo_label = store.read().redo_label().unwrap_or("Redo").to_string();
+
+    #[cfg(any(target_os = "windows", target_os = "linux", target_os = "macos"))]
+    use_muda_event_handler({
+        let mut store = store;
+        let mut dirty = dirty;
+        let mut notification = notification;
+        let mut notification_error = notification_error;
+        move |event| match event.id().0.as_str() {
+            "kstory.undo" => {
+                let result = store.write().undo();
+                match result {
+                    Ok(Some(label)) => {
+                        dirty.set(store.read().is_dirty());
+                        notification.set(format!("Undid {label}"));
+                        notification_error.set(false);
+                    }
+                    Ok(None) => {}
+                    Err(error) => {
+                        notification.set(error.to_string());
+                        notification_error.set(true);
+                    }
+                }
+            }
+            "kstory.redo" => {
+                let result = store.write().redo();
+                match result {
+                    Ok(Some(label)) => {
+                        dirty.set(store.read().is_dirty());
+                        notification.set(format!("Redid {label}"));
+                        notification_error.set(false);
+                    }
+                    Ok(None) => {}
+                    Err(error) => {
+                        notification.set(error.to_string());
+                        notification_error.set(true);
+                    }
+                }
+            }
+            "kstory.save" => {
+                let result = store.write().save_explicit();
+                match result {
+                    Ok(()) => {
+                        dirty.set(false);
+                        notification.set("Project saved".into());
+                        notification_error.set(false);
+                    }
+                    Err(error) => {
+                        dirty.set(store.read().is_dirty());
+                        notification.set(error.to_string());
+                        notification_error.set(true);
+                    }
+                }
+            }
+            _ => {}
+        }
+    });
 
     let notify = |message: String,
                   is_error: bool,
@@ -214,7 +323,7 @@ fn App() -> Element {
                                     Ok(_) => {
                                         let story_id = opened.content.stories.keys().next().cloned().unwrap_or_default();
                                         let node_id = opened.content.stories.get(&story_id).map(|story| story.entry_node_id.clone()).unwrap_or_default();
-                                        store.set(opened);
+                                        store.set(EditorSession::new(opened));
                                         selected_story.set(story_id);
                                         selected_node.set(node_id.clone());
                                         reader_node.set(node_id);
@@ -232,8 +341,8 @@ fn App() -> Element {
                     button {
                         class: "button button-secondary",
                         onclick: move |_| {
-                            match store.write().sync() {
-                                Ok(report) => notify(format!("Synced: {} keys, {} translations", report.created_keys, report.created_translations), false, &mut notification, &mut notification_error),
+                            match store.write().sync_and_reset() {
+                                Ok(report) => { dirty.set(false); notify(format!("Synced: {} keys, {} translations", report.created_keys, report.created_translations), false, &mut notification, &mut notification_error); }
                                 Err(error) => notify(error.to_string(), true, &mut notification, &mut notification_error),
                             }
                         },
@@ -249,16 +358,116 @@ fn App() -> Element {
                         },
                         "Validate"
                     }
+                    if can_undo {
+                        button {
+                            class: "button button-secondary",
+                            title: "{undo_label}",
+                            onclick: move |_| {
+                                let result = store.write().undo();
+                                match result {
+                                    Ok(Some(label)) => { dirty.set(store.read().is_dirty()); notify(format!("Undid {label}"), false, &mut notification, &mut notification_error); }
+                                    Ok(None) => {}
+                                    Err(error) => notify(error.to_string(), true, &mut notification, &mut notification_error),
+                                }
+                            },
+                            "Undo"
+                        }
+                    } else {
+                        button { class: "button button-secondary", disabled: true, "Undo" }
+                    }
+                    if can_redo {
+                        button {
+                            class: "button button-secondary",
+                            title: "{redo_label}",
+                            onclick: move |_| {
+                                let result = store.write().redo();
+                                match result {
+                                    Ok(Some(label)) => { dirty.set(store.read().is_dirty()); notify(format!("Redid {label}"), false, &mut notification, &mut notification_error); }
+                                    Ok(None) => {}
+                                    Err(error) => notify(error.to_string(), true, &mut notification, &mut notification_error),
+                                }
+                            },
+                            "Redo"
+                        }
+                    } else {
+                        button { class: "button button-secondary", disabled: true, "Redo" }
+                    }
+                    if !preferences.auto_save {
+                        button {
+                            class: "button button-primary",
+                            onclick: move |_| {
+                                let result = store.write().save_explicit();
+                                match result {
+                                    Ok(_) => { dirty.set(false); notify("Project saved".into(), false, &mut notification, &mut notification_error); }
+                                    Err(error) => { dirty.set(store.read().is_dirty()); notify(error.to_string(), true, &mut notification, &mut notification_error); }
+                                }
+                            },
+                            if *dirty.read() { "Save *" } else { "Save" }
+                        }
+                    }
                     button {
-                        class: "button button-primary",
+                        class: "button button-secondary",
                         onclick: move |_| {
-                            let result = store.read().save_content();
-                            match result {
-                                Ok(_) => { dirty.set(false); notify("Content saved".into(), false, &mut notification, &mut notification_error); }
-                                Err(error) => notify(error.to_string(), true, &mut notification, &mut notification_error),
-                            }
+                            let open = *settings_open.read();
+                            settings_open.set(!open);
                         },
-                        if *dirty.read() { "Save *" } else { "Save" }
+                        "Settings"
+                    }
+                }
+            }
+
+            if *settings_open.read() {
+                section { class: "settings-panel panel",
+                    div { class: "panel-heading",
+                        div { span { class: "eyebrow", "PREFERENCES" } h2 { "Editor settings" } }
+                        button { class: "button button-secondary", onclick: move |_| settings_open.set(false), "Close" }
+                    }
+                    label { class: "field-label",
+                        input {
+                            r#type: "checkbox",
+                            checked: preferences.auto_save,
+                            onchange: move |event| {
+                                let mut next = store.read().preferences().clone();
+                                next.auto_save = event.value() == "true";
+                                let result = store.write().update_preferences(next);
+                                match result {
+                                    Ok(_) => { dirty.set(store.read().is_dirty()); notification.set("Preferences updated".into()); notification_error.set(false); }
+                                    Err(error) => { notification.set(error.to_string()); notification_error.set(true); }
+                                }
+                            }
+                        }
+                        " Auto-save changes"
+                    }
+                    label { class: "field-label", "History limit" }
+                    input {
+                        class: "field-input",
+                        r#type: "number",
+                        min: "1",
+                        value: "{preferences.history_limit}",
+                        disabled: preferences.unlimited_history,
+                        onchange: move |event| {
+                            let mut next = store.read().preferences().clone();
+                            if let Ok(limit) = event.value().parse::<usize>() { next.history_limit = limit; }
+                            match store.write().update_preferences(next) {
+                                Ok(_) => { notification.set("History limit updated".into()); notification_error.set(false); }
+                                Err(error) => { notification.set(error.to_string()); notification_error.set(true); }
+                            }
+                        }
+                    }
+                    label { class: "field-label",
+                        input {
+                            r#type: "checkbox",
+                            checked: preferences.unlimited_history,
+                            onchange: move |event| {
+                                let mut next = store.read().preferences().clone();
+                                next.unlimited_history = event.value() == "true";
+                                match store.write().update_preferences(next) {
+                                    Ok(_) => { notification.set("History limit updated".into()); notification_error.set(false); }
+                                    Err(error) => { notification.set(error.to_string()); notification_error.set(true); }
+                                }
+                            }
+                        }
+                        " Unlimited history"
                     }
                 }
             }

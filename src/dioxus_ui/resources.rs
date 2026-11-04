@@ -1,8 +1,8 @@
 use super::*;
 
 #[component]
-pub(crate) fn KeyRegistry(store: Signal<Store>, mut key_search: Signal<String>) -> Element {
-    let snapshot = store.read().clone();
+pub(crate) fn KeyRegistry(store: Signal<EditorSession>, mut key_search: Signal<String>) -> Element {
+    let snapshot = store.read().store_snapshot();
     let query = key_search.read().to_lowercase();
     let keys: Vec<(String, String)> = snapshot
         .catalog
@@ -30,13 +30,13 @@ pub(crate) fn KeyRegistry(store: Signal<Store>, mut key_search: Signal<String>) 
 
 #[component]
 pub(crate) fn ResourceWorkspace(
-    store: Signal<Store>,
+    store: Signal<EditorSession>,
     section: Section,
     mut dirty: Signal<bool>,
     mut notification: Signal<String>,
     mut notification_error: Signal<bool>,
 ) -> Element {
-    let snapshot = store.read().clone();
+    let snapshot = store.read().store_snapshot();
     let (title, entries): (String, Vec<String>) = match section {
         Section::Quests => (
             "Quests".into(),

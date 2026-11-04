@@ -3,7 +3,7 @@ use super::*;
 
 #[component]
 pub(crate) fn TranslationWorkspace(
-    store: Signal<Store>,
+    store: Signal<EditorSession>,
     locale_value: String,
     mut selected_key: Signal<Option<String>>,
     mut translation_draft: Signal<String>,
@@ -14,7 +14,7 @@ pub(crate) fn TranslationWorkspace(
     mut notification: Signal<String>,
     mut notification_error: Signal<bool>,
 ) -> Element {
-    let snapshot = store.read().clone();
+    let snapshot = store.read().store_snapshot();
     let saved_filter = translation_filters
         .read()
         .by_locale
@@ -245,7 +245,7 @@ fn translation_status_label(status: &str) -> &'static str {
 
 #[component]
 pub(crate) fn TranslationEditor(
-    store: Signal<Store>,
+    store: Signal<EditorSession>,
     view: EntryViewModel,
     locale_value: String,
     mut translation_draft: Signal<String>,
@@ -253,6 +253,7 @@ pub(crate) fn TranslationEditor(
     mut notification: Signal<String>,
     mut notification_error: Signal<bool>,
 ) -> Element {
+    let auto_save = store.read().preferences().auto_save;
     let key = view.key.clone();
     let locale_for_save = locale_value.clone();
     let locale_for_review = locale_value.clone();
@@ -271,9 +272,18 @@ pub(crate) fn TranslationEditor(
             textarea { class: "field-textarea", value: "{translation_draft}", oninput: move |event| { translation_draft.set(event.value()); dirty.set(true); } }
             if !view.validation_errors.is_empty() { div { class: "validation-errors", for error in view.validation_errors.iter() { div { "! {error}" } } } }
             div { class: "reader-actions",
-                button { class: "button button-primary", onclick: move |_| match store.write().save_translation(&locale_for_save, &key_for_save, translation_draft.read().clone()) { Ok(_) => { dirty.set(false); notification.set("Translation saved and waiting for review".into()); notification_error.set(false); } Err(error) => { notification.set(error.to_string()); notification_error.set(true); } }, "Save" }
-                button { class: "button button-secondary", onclick: move |_| match store.write().mark_on_review(&locale_for_review, &key_for_review) { Ok(_) => { notification.set("Translation marked on review".into()); notification_error.set(false); } Err(error) => { notification.set(error.to_string()); notification_error.set(true); } }, "Mark on review" }
-                button { class: "button button-success", disabled: view.status != ON_REVIEW, onclick: move |_| match store.write().accept(&locale_for_accept, &key_for_accept) { Ok(_) => { notification.set("Translation accepted".into()); notification_error.set(false); } Err(error) => { notification.set(error.to_string()); notification_error.set(true); } }, "Accept" }
+                button { class: "button button-primary", onclick: move |_| {
+                    let result = store.write().save_translation(&locale_for_save, &key_for_save, translation_draft.read().clone());
+                    match result { Ok(_) => { dirty.set(!auto_save); notification.set("Translation saved and waiting for review".into()); notification_error.set(false); } Err(error) => { notification.set(error.to_string()); notification_error.set(true); } }
+                }, "Save" }
+                button { class: "button button-secondary", onclick: move |_| {
+                    let result = store.write().mark_on_review(&locale_for_review, &key_for_review);
+                    match result { Ok(_) => { dirty.set(!auto_save); notification.set("Translation marked on review".into()); notification_error.set(false); } Err(error) => { notification.set(error.to_string()); notification_error.set(true); } }
+                }, "Mark on review" }
+                button { class: "button button-success", disabled: view.status != ON_REVIEW, onclick: move |_| {
+                    let result = store.write().accept(&locale_for_accept, &key_for_accept);
+                    match result { Ok(_) => { dirty.set(!auto_save); notification.set("Translation accepted".into()); notification_error.set(false); } Err(error) => { notification.set(error.to_string()); notification_error.set(true); } }
+                }, "Accept" }
             }
         }
     }

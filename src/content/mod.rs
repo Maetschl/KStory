@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 #[cfg(test)]
 use std::collections::BTreeSet;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 mod io;
 mod layout;
@@ -32,20 +32,6 @@ pub struct ContentPaths {
     pub items: PathBuf,
     pub entities: PathBuf,
     pub callbacks: PathBuf,
-}
-
-impl ContentPaths {
-    pub fn legacy(root: impl AsRef<Path>) -> Self {
-        let root = root.as_ref();
-        Self {
-            stories: root.join("stories.json"),
-            dialogues: root.join("dialogues.json"),
-            quests: root.join("quests.json"),
-            items: root.join("items.json"),
-            entities: root.join("entities.json"),
-            callbacks: root.join("callbacks.json"),
-        }
-    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]

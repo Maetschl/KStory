@@ -125,7 +125,7 @@ fn status_display(status: &str) -> String {
 
 pub(crate) struct EditorApp {
     pub(crate) root: PathBuf,
-    pub(crate) store: Store,
+    pub(crate) store: EditorSession,
     pub(crate) locale: String,
     pub(crate) filters: FilterState,
     pub(crate) show_content: bool,
@@ -369,7 +369,8 @@ impl EditorApp {
                         self.external_snapshot = Some(fresh);
                         self.external_conflict = true;
                     } else {
-                        self.store = fresh;
+                        self.store = EditorSession::new(fresh);
+                        self.content_dirty = false;
                         self.load_draft();
                         self.notify("Catalog reloaded after an external change.", false);
                     }
@@ -432,10 +433,10 @@ impl EditorApp {
     }
 
     fn save_content(&mut self) {
-        match self.store.content.save(&self.root) {
+        match self.store.save_explicit() {
             Ok(()) => {
                 self.content_dirty = false;
-                self.notify("Content saved.", false);
+                self.notify("Project saved.", false);
             }
             Err(error) => self.notify(format!("Content save failed: {error}"), true),
         }
@@ -1703,7 +1704,7 @@ impl eframe::App for EditorApp {
                         .add_sized([70.0, 32.0], egui::Button::new("Sync"))
                         .clicked()
                     {
-                        match self.store.sync() {
+                        match self.store.sync_and_reset() {
                             Ok(report) => self.notify(
                                 format!(
                                     "Synced: {} new keys, {} source changes, {} orphaned keys.",
@@ -1713,6 +1714,32 @@ impl eframe::App for EditorApp {
                                 ),
                                 false,
                             ),
+                            Err(error) => self.notify(error.to_string(), true),
+                        }
+                    }
+                    if ui
+                        .add_enabled(self.store.can_undo(), egui::Button::new("Undo"))
+                        .clicked()
+                    {
+                        match self.store.undo() {
+                            Ok(Some(label)) => {
+                                self.content_dirty = self.store.is_dirty();
+                                self.notify(format!("Undid {label}."), false);
+                            }
+                            Ok(None) => {}
+                            Err(error) => self.notify(error.to_string(), true),
+                        }
+                    }
+                    if ui
+                        .add_enabled(self.store.can_redo(), egui::Button::new("Redo"))
+                        .clicked()
+                    {
+                        match self.store.redo() {
+                            Ok(Some(label)) => {
+                                self.content_dirty = self.store.is_dirty();
+                                self.notify(format!("Redid {label}."), false);
+                            }
+                            Ok(None) => {}
                             Err(error) => self.notify(error.to_string(), true),
                         }
                     }
@@ -2534,7 +2561,8 @@ impl eframe::App for EditorApp {
                         }
                         if ui.button("Reload external changes").clicked() {
                             if let Some(snapshot) = self.external_snapshot.take() {
-                                self.store = snapshot;
+                                self.store = EditorSession::new(snapshot);
+                                self.content_dirty = false;
                                 self.draft_dirty = false;
                                 self.load_draft();
                             }
@@ -2594,6 +2622,15 @@ impl eframe::App for EditorApp {
                     });
             } else {
                 self.notification = None;
+            }
+        }
+        if self
+            .store
+            .observe_external_mutations("Legacy editor edit", Some("legacy-editor".into()))
+        {
+            self.content_dirty = self.store.is_dirty();
+            if let Some(error) = self.store.last_save_error().map(str::to_owned) {
+                self.notify(format!("Auto-save failed: {error}"), true);
             }
         }
         context.request_repaint_after(Duration::from_millis(250));

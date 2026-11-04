@@ -8,7 +8,7 @@ use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::io::Write;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -123,12 +123,79 @@ pub(crate) struct SyncReport {
 
 #[derive(Debug, Clone)]
 pub(crate) struct Store {
-    pub(crate) root: PathBuf,
     pub(crate) paths: project::ProjectPaths,
     pub(crate) catalog: Catalog,
     pub(crate) source: LocaleFile,
     pub(crate) targets: BTreeMap<String, LocaleFile>,
     pub(crate) content: content::ContentCatalog,
+    pub(crate) persist_mutations: bool,
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct StoreState {
+    pub(crate) catalog: Catalog,
+    pub(crate) source: LocaleFile,
+    pub(crate) targets: BTreeMap<String, LocaleFile>,
+    pub(crate) content: content::ContentCatalog,
+}
+
+impl StoreState {
+    pub(crate) fn from_store(store: &Store) -> Self {
+        Self {
+            catalog: store.catalog.clone(),
+            source: store.source.clone(),
+            targets: store.targets.clone(),
+            content: store.content.clone(),
+        }
+    }
+
+    pub(crate) fn apply_to(self, store: &mut Store) {
+        store.catalog = self.catalog;
+        store.source = self.source;
+        store.targets = self.targets;
+        store.content = self.content;
+    }
+}
+
+impl PartialEq for StoreState {
+    fn eq(&self, other: &Self) -> bool {
+        serde_json::to_vec(&(&self.catalog, &self.source, &self.targets, &self.content)).ok()
+            == serde_json::to_vec(&(
+                &other.catalog,
+                &other.source,
+                &other.targets,
+                &other.content,
+            ))
+            .ok()
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub(crate) struct AppPreferences {
+    #[serde(default = "default_auto_save")]
+    pub(crate) auto_save: bool,
+    #[serde(default = "default_history_limit")]
+    pub(crate) history_limit: usize,
+    #[serde(default)]
+    pub(crate) unlimited_history: bool,
+}
+
+impl Default for AppPreferences {
+    fn default() -> Self {
+        Self {
+            auto_save: true,
+            history_limit: 100,
+            unlimited_history: false,
+        }
+    }
+}
+
+fn default_auto_save() -> bool {
+    true
+}
+
+fn default_history_limit() -> usize {
+    100
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -159,8 +226,11 @@ pub(crate) struct ConnectionRequest {
 
 mod content_ops;
 mod persistence;
+mod session;
 mod sync;
 mod translations;
+
+pub(crate) use session::EditorSession;
 
 fn infer_type(key: &str) -> String {
     if key.starts_with("dialog.") {

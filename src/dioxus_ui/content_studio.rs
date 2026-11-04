@@ -3,7 +3,7 @@ use super::*;
 
 #[component]
 pub(crate) fn StoryExplorer(
-    store: Signal<Store>,
+    store: Signal<EditorSession>,
     mut selected_story: Signal<String>,
     mut selected_node: Signal<String>,
     mut reader_node: Signal<String>,
@@ -13,7 +13,8 @@ pub(crate) fn StoryExplorer(
     mut notification: Signal<String>,
     mut notification_error: Signal<bool>,
 ) -> Element {
-    let snapshot = store.read().clone();
+    let auto_save = store.read().preferences().auto_save;
+    let snapshot = store.read().store_snapshot();
     let query = content_search.read().to_lowercase();
     let stories: Vec<String> = snapshot
         .content
@@ -46,7 +47,7 @@ pub(crate) fn StoryExplorer(
                             selected_story.set(created.story_id.clone());
                             selected_node.set(created.entry_node_id.clone());
                             reader_node.set(created.entry_node_id);
-                            dirty.set(true);
+                            dirty.set(!auto_save);
                             notification.set(format!("Created {}", created.story_id));
                             notification_error.set(false);
                         }
@@ -113,7 +114,7 @@ pub(crate) fn StoryExplorer(
 
 #[component]
 pub(crate) fn StoryWorkspace(
-    store: Signal<Store>,
+    store: Signal<EditorSession>,
     story: Option<content::StoryDefinition>,
     story_id: String,
     mut selected_node: Signal<String>,
@@ -128,6 +129,7 @@ pub(crate) fn StoryWorkspace(
     mut notification: Signal<String>,
     mut notification_error: Signal<bool>,
 ) -> Element {
+    let auto_save = store.read().preferences().auto_save;
     let mut new_command_type = use_signal(|| "camera_shake_start".to_string());
     let mut new_item_id = use_signal(|| "HAMMER".to_string());
     let Some(story) = story else {
@@ -179,13 +181,24 @@ pub(crate) fn StoryWorkspace(
                         class: "button button-secondary",
                         onclick: move |_| {
                             let (positions, _) = content::arrange_story_top_down(&arrange_story);
-                            if let Some(current) = store.write().content.stories.get_mut(&arrange_story_id) {
-                                for (node_id, position) in positions {
-                                    if let Some(node) = current.nodes.get_mut(&node_id) { node.position = [position.x, position.y]; }
+                            let result = store.write().edit("Arrange story", None, |store| {
+                                if let Some(current) = store.content.stories.get_mut(&arrange_story_id) {
+                                    for (node_id, position) in positions {
+                                        if let Some(node) = current.nodes.get_mut(&node_id) { node.position = [position.x, position.y]; }
+                                    }
                                 }
-                                dirty.set(true);
-                                notification.set("Story arranged vertically".into());
-                                notification_error.set(false);
+                                Ok(())
+                            });
+                            match result {
+                                Ok(()) => {
+                                    dirty.set(!auto_save);
+                                    notification.set("Story arranged vertically".into());
+                                    notification_error.set(false);
+                                }
+                                Err(error) => {
+                                    notification.set(error.to_string());
+                                    notification_error.set(true);
+                                }
                             }
                         },
                         "Arrange vertically"
@@ -199,7 +212,7 @@ pub(crate) fn StoryWorkspace(
                             });
                             let kind = new_node_story.nodes.get(&from).map(|node| if node.node_type == "choice" { "choice" } else { "next" }).unwrap_or("next");
                             match store.write().create_node(&new_node_story_id, "dialogue", "Narrator", "New dialogue line", None, if new_node_story.nodes.contains_key(&from) && new_node_story.nodes[&from].node_type != "end" { Some((from, output.unwrap_or_else(|| "default".into()), kind.into())) } else { None }) {
-                                Ok(created) => { selected_node.set(created.node_id.clone()); reader_node.set(created.node_id); dirty.set(true); notification.set("Created and selected new dialogue node".into()); notification_error.set(false); }
+                                Ok(created) => { selected_node.set(created.node_id.clone()); reader_node.set(created.node_id); dirty.set(!auto_save); notification.set("Created and selected new dialogue node".into()); notification_error.set(false); }
                                 Err(error) => { notification.set(error.to_string()); notification_error.set(true); }
                             }
                         },
@@ -219,7 +232,7 @@ pub(crate) fn StoryWorkspace(
                             let selected_item_id = new_item_id.read().clone();
                             let parameter = if command_type == "show_item" { selected_item_id.as_str() } else if command_type == "show_icon" { "LOVE" } else { command_type.as_str() };
                             match store.write().create_node(&action_node_story_id, node_type, "System", "", Some(parameter), if can_connect { Some((from, output.unwrap_or_else(|| "default".into()), kind.into())) } else { None }) {
-                                Ok(created) => { selected_node.set(created.node_id.clone()); reader_node.set(created.node_id); dirty.set(true); notification.set("Created and selected action node".into()); notification_error.set(false); }
+                                Ok(created) => { selected_node.set(created.node_id.clone()); reader_node.set(created.node_id); dirty.set(!auto_save); notification.set("Created and selected action node".into()); notification_error.set(false); }
                                 Err(error) => { notification.set(error.to_string()); notification_error.set(true); }
                             }
                         },
@@ -269,7 +282,7 @@ pub(crate) fn StoryWorkspace(
                                                         let kind = node_story.nodes.get(&from).map(|source| if source.node_type == "choice" { "choice" } else { "next" }).unwrap_or("next");
                                                         let output = if kind == "choice" { format!("choice.{}", node_story.connections.values().filter(|connection| connection.from_node_id == from).count() + 1) } else { "default".into() };
                                                         match store.write().connect_nodes(&node_story_id, ConnectionRequest { from_node_id: from, to_node_id: input_id.clone(), output_id: output, connection_kind: kind.into(), label_key: None, condition: None }) {
-                                                            Ok(connection_id) => { selected_connection.set(Some(connection_id)); pending_connection.set(None); dirty.set(true); notification.set("Connection created".into()); notification_error.set(false); }
+                                                            Ok(connection_id) => { selected_connection.set(Some(connection_id)); pending_connection.set(None); dirty.set(!auto_save); notification.set("Connection created".into()); notification_error.set(false); }
                                                             Err(error) => { notification.set(error.to_string()); notification_error.set(true); }
                                                         }
                                                     }
@@ -342,7 +355,7 @@ pub(crate) fn StoryWorkspace(
 
 #[component]
 pub(crate) fn StoryReader(
-    store: Signal<Store>,
+    store: Signal<EditorSession>,
     story: content::StoryDefinition,
     story_id: String,
     mut reader_node: Signal<String>,
@@ -407,7 +420,7 @@ pub(crate) fn StoryReader(
 
 #[component]
 pub(crate) fn StoryInspector(
-    store: Signal<Store>,
+    store: Signal<EditorSession>,
     story: Option<content::StoryDefinition>,
     story_id: String,
     selected_node_id: String,
@@ -417,6 +430,7 @@ pub(crate) fn StoryInspector(
     mut notification: Signal<String>,
     mut notification_error: Signal<bool>,
 ) -> Element {
+    let auto_save = store.read().preferences().auto_save;
     let selected_node_value = story
         .as_ref()
         .and_then(|story| story.nodes.get(&selected_node_id))
@@ -433,7 +447,7 @@ pub(crate) fn StoryInspector(
         .as_ref()
         .and_then(|node| node.dialogue_id.as_ref())
         .and_then(|dialogue_id| {
-            let snapshot = store.read().clone();
+            let snapshot = store.read().store_snapshot();
             let line_id = selected_node_value
                 .as_ref()
                 .and_then(|node| node.dialogue_line_id.as_deref());
@@ -511,25 +525,25 @@ pub(crate) fn StoryInspector(
                     label { "To" }
                     input { class: "field-input", value: "{connection.to_node_id}", onchange: move |event| {
                         match store.write().update_connection(&story_id_for_connection_target, &connection_id_for_target, ConnectionRequest { from_node_id: connection_from_for_target.clone(), to_node_id: event.value(), output_id: connection_output_for_target.clone(), connection_kind: connection_kind_for_target.clone(), label_key: connection_label_for_target.clone(), condition: connection_condition_for_target.clone() }) {
-                            Ok(_) => { dirty.set(true); notification.set("Connection target updated".into()); notification_error.set(false); }
+                            Ok(_) => { dirty.set(!auto_save); notification.set("Connection target updated".into()); notification_error.set(false); }
                             Err(error) => { notification.set(error.to_string()); notification_error.set(true); }
                         }
                     } }
                     label { "Output" }
                     input { class: "field-input", value: "{connection.output_id}", onchange: move |event| {
                         match store.write().update_connection(&story_id_for_connection_output, &connection_id_for_output, ConnectionRequest { from_node_id: connection_from_for_output.clone(), to_node_id: connection_to_for_output.clone(), output_id: event.value(), connection_kind: connection_kind_for_output.clone(), label_key: connection_label_for_output.clone(), condition: connection_condition_for_output.clone() }) {
-                            Ok(_) => { dirty.set(true); notification.set("Connection output updated".into()); notification_error.set(false); }
+                            Ok(_) => { dirty.set(!auto_save); notification.set("Connection output updated".into()); notification_error.set(false); }
                             Err(error) => { notification.set(error.to_string()); notification_error.set(true); }
                         }
                     } }
-                    button { class: "button button-danger full-width", onclick: move |_| match store.write().delete_connection(&story_id_for_connection_delete, &connection_id_for_delete) { Ok(_) => { dirty.set(true); notification.set("Connection deleted".into()); notification_error.set(false); } Err(error) => { notification.set(error.to_string()); notification_error.set(true); } }, "Disconnect" }
+                    button { class: "button button-danger full-width", onclick: move |_| match store.write().delete_connection(&story_id_for_connection_delete, &connection_id_for_delete) { Ok(_) => { dirty.set(!auto_save); notification.set("Connection deleted".into()); notification_error.set(false); } Err(error) => { notification.set(error.to_string()); notification_error.set(true); } }, "Disconnect" }
                 } else if let Some(ref node) = selected_node_value {
                     h3 { "Node properties" }
                     span { class: format!("node-pill {}", node_type_class(&node.node_type)), "{node.node_type}" }
                     label { "Node ID" }
                     input { class: "field-input readonly", value: "{selected_node_id}", readonly: true }
                     label { "Display name key" }
-                    input { class: "field-input", value: "{node.name_key}", onchange: move |event| { match store.write().update_node(&story_id_for_name, &node_id_for_name, event.value(), node_type_for_name.clone()) { Ok(_) => dirty.set(true), Err(error) => { notification.set(error.to_string()); notification_error.set(true); } } } }
+                    input { class: "field-input", value: "{node.name_key}", onchange: move |event| { match store.write().update_node(&story_id_for_name, &node_id_for_name, event.value(), node_type_for_name.clone()) { Ok(_) => dirty.set(!auto_save), Err(error) => { notification.set(error.to_string()); notification_error.set(true); } } } }
                     label { "Type" }
                     input { class: "field-input readonly", value: "{node.node_type}", readonly: true }
                     if let Some(dialogue_id) = node.dialogue_id.clone() {
@@ -541,7 +555,7 @@ pub(crate) fn StoryInspector(
                         textarea { class: "field-textarea readonly", value: "{preview.0}", readonly: true }
                         if preview.1 { div { class: "fallback-warning", "Fallback to English · {preview.2}" } }
                     }
-                    button { class: "button button-primary full-width", onclick: move |_| { dirty.set(true); notification.set("Node changes are ready to save".into()); notification_error.set(false); }, "Save node" }
+                    button { class: "button button-primary full-width", onclick: move |_| { dirty.set(!auto_save); notification.set("Node changes are ready to save".into()); notification_error.set(false); }, "Save node" }
                 } else {
                     div { class: "empty-inspector", "Select a node or connection to inspect it." }
                 }
@@ -551,11 +565,11 @@ pub(crate) fn StoryInspector(
 }
 
 fn preview_lines(
-    store: &Signal<Store>,
+    store: &Signal<EditorSession>,
     locale: &str,
     node: &content::StoryNode,
 ) -> Vec<PreviewLine> {
-    let snapshot = store.read().clone();
+    let snapshot = store.read().store_snapshot();
     if let Some(dialogue_id) = &node.dialogue_id {
         if let Some(dialogue) = snapshot.content.dialogues.get(dialogue_id) {
             let lines = dialogue

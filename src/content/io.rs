@@ -3,7 +3,7 @@ use super::*;
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::io::Write;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -119,10 +119,6 @@ impl ContentCatalog {
         catalog.normalize_legacy_connections();
         catalog.normalize_legacy_payloads()?;
         Ok(catalog)
-    }
-
-    pub fn save(&self, root: impl AsRef<Path>) -> Result<(), String> {
-        self.save_files(&ContentPaths::legacy(root))
     }
 
     pub fn save_files(&self, paths: &ContentPaths) -> Result<(), String> {

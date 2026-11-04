@@ -914,7 +914,7 @@ mod tests {
         let (_sender, receiver) = channel();
         let mut app = EditorApp {
             root: PathBuf::new(),
-            store,
+            store: EditorSession::new(store),
             locale: "es".into(),
             filters: FilterState::default(),
             show_content: true,
@@ -1168,7 +1168,7 @@ mod tests {
         let (_sender, receiver) = channel();
         let mut app = EditorApp {
             root: PathBuf::new(),
-            store,
+            store: EditorSession::new(store),
             locale: "en".into(),
             filters: FilterState::default(),
             show_content: true,
@@ -1218,7 +1218,7 @@ mod tests {
         let (_sender, receiver) = channel();
         let mut app = EditorApp {
             root: PathBuf::new(),
-            store,
+            store: EditorSession::new(store),
             locale: "es".into(),
             filters: FilterState::default(),
             show_content: true,
@@ -1325,7 +1325,6 @@ mod tests {
             );
         }
         let store = Store {
-            root: PathBuf::new(),
             paths: project::ProjectPaths {
                 manifest_path: None,
                 project_dir: PathBuf::new(),
@@ -1360,11 +1359,81 @@ mod tests {
                 },
             )]),
             content: content::ContentCatalog::default(),
+            persist_mutations: true,
         };
         let filters = FilterState {
             story: "even".into(),
             ..Default::default()
         };
         assert_eq!(store.filtered_keys("es", &filters).len(), 5_000);
+    }
+
+    #[test]
+    fn editor_session_undoes_and_redoes_a_compound_story_edit() {
+        let (_directory, store) = test_store();
+        let mut session = EditorSession::new(store);
+        let created = session.create_story().unwrap();
+        assert!(session.content.stories.contains_key(&created.story_id));
+
+        session.undo().unwrap();
+        assert!(session.content.stories.is_empty());
+        assert!(!session.can_undo());
+        assert!(session.can_redo());
+
+        session.redo().unwrap();
+        assert!(session.content.stories.contains_key(&created.story_id));
+    }
+
+    #[test]
+    fn editor_session_undoes_and_redoes_translation_edits() {
+        let (_directory, store) = test_store();
+        let mut session = EditorSession::new(store);
+        session
+            .save_translation("es", "dialog.test", "Hola de nuevo {name}".into())
+            .unwrap();
+        assert_eq!(
+            session.targets["es"].entries["dialog.test"].text,
+            "Hola de nuevo {name}"
+        );
+
+        session.undo().unwrap();
+        assert_eq!(
+            session.targets["es"].entries["dialog.test"].text,
+            "Hola {name}"
+        );
+        session.redo().unwrap();
+        assert_eq!(
+            session.targets["es"].entries["dialog.test"].text,
+            "Hola de nuevo {name}"
+        );
+    }
+
+    #[test]
+    fn failed_session_mutations_are_rolled_back_without_history() {
+        let (_directory, store) = test_store();
+        let mut session = EditorSession::new(store);
+        let result = session.edit("Failed edit", None, |store| {
+            store.catalog.source_locale = "fr".into();
+            Err::<(), AppError>(AppError::Validation("expected failure".into()))
+        });
+
+        assert!(result.is_err());
+        assert_eq!(session.catalog.source_locale, "en");
+        assert!(!session.can_undo());
+    }
+
+    #[test]
+    fn failed_save_keeps_session_dirty() {
+        let (directory, store) = test_store();
+        let mut session = EditorSession::new(store);
+        session.paths.keys = directory.path().to_path_buf();
+        let _ = session.edit("Edit before failed save", None, |store| {
+            store.catalog.source_locale = "fr".into();
+            Ok(())
+        });
+
+        assert!(session.is_dirty());
+        assert!(session.save_explicit().is_err());
+        assert!(session.is_dirty());
     }
 }

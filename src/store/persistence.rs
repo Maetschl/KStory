@@ -76,12 +76,12 @@ impl Store {
         })
         .map_err(AppError::Validation)?;
         Ok(Self {
-            root: paths.project_dir.clone(),
             paths,
             catalog,
             source,
             targets,
             content,
+            persist_mutations: true,
         })
     }
 
@@ -95,6 +95,19 @@ impl Store {
             write_json(&self.paths.locale_file(locale), file)?;
         }
         Ok(())
+    }
+
+    pub(crate) fn save_all(&self) -> Result<(), AppError> {
+        self.save_content()?;
+        self.save()
+    }
+
+    pub(crate) fn save_if_enabled(&self) -> Result<(), AppError> {
+        if self.persist_mutations {
+            self.save_all()
+        } else {
+            Ok(())
+        }
     }
 
     pub(crate) fn save_content(&self) -> Result<(), AppError> {

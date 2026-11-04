@@ -1,3 +1,4 @@
+use super::EditorSession;
 use super::*;
 
 pub(crate) fn action_summary(action: &content::ActionDefinition) -> String {
@@ -110,8 +111,8 @@ pub(crate) fn folder_label(folder: &str) -> String {
         .join(" ")
 }
 
-pub(crate) fn node_speaker(store: &Signal<Store>, node: &content::StoryNode) -> String {
-    let snapshot = store.read().clone();
+pub(crate) fn node_speaker(store: &Signal<EditorSession>, node: &content::StoryNode) -> String {
+    let snapshot = store.read().store_snapshot();
     let line_id = node.dialogue_line_id.as_deref();
     node.dialogue_id
         .as_ref()
@@ -126,11 +127,15 @@ pub(crate) fn node_speaker(store: &Signal<Store>, node: &content::StoryNode) -> 
         .unwrap_or_else(|| "System".into())
 }
 
-pub(crate) fn node_text(store: &Signal<Store>, locale: &str, node: &content::StoryNode) -> String {
+pub(crate) fn node_text(
+    store: &Signal<EditorSession>,
+    locale: &str,
+    node: &content::StoryNode,
+) -> String {
     let Some(dialogue_id) = &node.dialogue_id else {
         return node.node_type.replace('_', " ");
     };
-    let snapshot = store.read().clone();
+    let snapshot = store.read().store_snapshot();
     let Some(dialogue) = snapshot.content.dialogues.get(dialogue_id) else {
         return "Dialogue missing".into();
     };

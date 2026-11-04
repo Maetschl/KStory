@@ -112,7 +112,7 @@ impl Store {
                     connections: BTreeMap::new(),
                 },
             );
-            self.save()?;
+            self.save_if_enabled()?;
             Ok(CreatedStory {
                 story_id: story_id.clone(),
                 entry_node_id: entry_node_id.clone(),
@@ -351,10 +351,7 @@ impl Store {
             {
                 self.content.stories.remove("blacksmith");
             }
-            self.content
-                .save(&self.root)
-                .map_err(AppError::Validation)?;
-            self.save()?;
+            self.save_if_enabled()?;
             Ok(created)
         })();
         if result.is_err() {
@@ -602,10 +599,7 @@ impl Store {
             self.content.stories.retain(|story_id, story| {
                 !(matches!(story_id.as_str(), "intro" | "well") && story.nodes.is_empty())
             });
-            self.content
-                .save(&self.root)
-                .map_err(AppError::Validation)?;
-            self.save()?;
+            self.save_if_enabled()?;
             Ok(created)
         })();
 
@@ -1094,10 +1088,7 @@ impl Store {
             ] {
                 self.content.stories.remove(old_story_id);
             }
-            self.content
-                .save(&self.root)
-                .map_err(AppError::Validation)?;
-            self.save()?;
+            self.save_if_enabled()?;
             Ok(created)
         })();
         if result.is_err() {
@@ -1598,7 +1589,12 @@ impl Store {
             self.content = snapshot.3;
             return Err(error);
         }
-        if let Err(error) = self.save_content().and_then(|_| self.save()) {
+        let save_result = if self.persist_mutations {
+            self.save_all()
+        } else {
+            Ok(())
+        };
+        if let Err(error) = save_result {
             self.catalog = snapshot.0;
             self.source = snapshot.1;
             self.targets = snapshot.2;

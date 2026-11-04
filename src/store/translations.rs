@@ -294,7 +294,7 @@ impl Store {
         entry.source_hash = source_hash;
         entry.text_hash = hash_text(&entry.text);
         entry.translated_by = Some("manual".into());
-        self.save()
+        self.save_if_enabled()
     }
 
     pub(crate) fn mark_on_review(&mut self, locale: &str, key: &str) -> Result<(), AppError> {
@@ -318,7 +318,7 @@ impl Store {
             .ok_or_else(|| AppError::Validation(format!("unknown key {key}")))?;
         entry.status = ON_REVIEW.into();
         entry.text_hash = hash_text(&entry.text);
-        self.save()
+        self.save_if_enabled()
     }
 
     #[allow(dead_code, reason = "reset is exposed by the legacy editor")]
@@ -342,7 +342,7 @@ impl Store {
         entry.source_hash = source_hash;
         entry.text_hash = hash_text("");
         entry.translated_by = None;
-        self.save()
+        self.save_if_enabled()
     }
 
     pub(crate) fn accept(&mut self, locale: &str, key: &str) -> Result<(), AppError> {
@@ -389,7 +389,7 @@ impl Store {
             )));
         }
         entry.status = ACCEPTED.into();
-        self.save()
+        self.save_if_enabled()
     }
 
     pub(crate) fn accept_all_on_review(&mut self, locale: &str) -> Result<usize, AppError> {
@@ -423,7 +423,7 @@ impl Store {
             .get_mut(key)
             .ok_or_else(|| AppError::Validation(format!("unknown key {key}")))?;
         entry.status = WAITING.into();
-        self.save()
+        self.save_if_enabled()
     }
 
     pub(crate) fn set_translation(
@@ -462,7 +462,7 @@ impl Store {
         entry.source_hash = source_hash;
         entry.text_hash = hash_text(&entry.text);
         entry.translated_by = Some(translated_by);
-        self.save()
+        self.save_if_enabled()
     }
 
     pub(crate) fn add_key(
@@ -474,7 +474,7 @@ impl Store {
         owner_id: Option<String>,
     ) -> Result<(), AppError> {
         self.add_key_in_memory(key, text, entry_type, story_id, owner_id)?;
-        self.save()
+        self.save_if_enabled()
     }
 
     pub(crate) fn add_key_in_memory(
