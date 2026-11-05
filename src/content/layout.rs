@@ -112,24 +112,3 @@ pub fn outgoing_node_ids(story: &StoryDefinition, node_id: &str) -> Vec<String> 
         })
         .unwrap_or_default()
 }
-
-#[cfg(feature = "legacy-egui")]
-#[allow(
-    dead_code,
-    reason = "legacy-egui remains a compatibility-only color helper"
-)]
-pub fn node_type_color(node_type: &str) -> [u8; 3] {
-    match node_type {
-        "dialogue" => [52, 129, 203],
-        "show_item" => [123, 78, 170],
-        "show_icon" => [154, 74, 145],
-        "choice" => [135, 88, 194],
-        "condition" => [196, 158, 46],
-        "action" => [208, 116, 45],
-        "quest_start" | "quest_update" => [52, 156, 93],
-        "scene_transition" => [38, 165, 166],
-        "event" => [187, 67, 150],
-        "end" => [99, 111, 125],
-        _ => [81, 96, 113],
-    }
-}

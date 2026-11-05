@@ -7,9 +7,7 @@ mod store;
 
 #[cfg(test)]
 use crate::project;
-#[cfg(feature = "legacy-egui")]
-use eframe::egui;
-#[cfg(any(feature = "legacy-egui", test))]
+#[cfg(test)]
 use std::collections::{BTreeMap, BTreeSet};
 #[cfg(test)]
 use std::fs;
@@ -21,30 +19,6 @@ const WAITING: &str = "waiting_for_translation";
 const ON_REVIEW: &str = "on_review";
 const ACCEPTED: &str = "accepted";
 const CATALOG_SCHEMA_VERSION: u32 = 1;
-#[cfg(feature = "legacy-egui")]
-#[allow(
-    dead_code,
-    reason = "legacy-egui remains a compatibility-only editor surface"
-)]
-const EXPLORER_WIDTH: f32 = 320.0;
-#[cfg(feature = "legacy-egui")]
-#[allow(
-    dead_code,
-    reason = "legacy-egui remains a compatibility-only editor surface"
-)]
-const INSPECTOR_WIDTH: f32 = 320.0;
-#[cfg(feature = "legacy-egui")]
-#[allow(
-    dead_code,
-    reason = "legacy-egui remains a compatibility-only editor surface"
-)]
-const SIDE_PANEL_MIN_WIDTH: f32 = 260.0;
-#[cfg(feature = "legacy-egui")]
-#[allow(
-    dead_code,
-    reason = "legacy-egui remains a compatibility-only editor surface"
-)]
-const SIDE_PANEL_MAX_WIDTH: f32 = 520.0;
 
 #[derive(Debug, Error)]
 pub(crate) enum AppError {
@@ -57,20 +31,6 @@ pub(crate) enum AppError {
     },
     #[error("validation failed: {0}")]
     Validation(String),
-}
-
-#[cfg(feature = "legacy-egui")]
-#[allow(
-    dead_code,
-    reason = "legacy-egui remains a compatibility-only editor surface"
-)]
-fn edit_text(ui: &mut egui::Ui, label: &str, value: &mut String, dirty: &mut bool) {
-    ui.horizontal(|ui| {
-        ui.label(label);
-        if ui.text_edit_singleline(value).changed() {
-            *dirty = true;
-        }
-    });
 }
 
 #[derive(Parser)]
@@ -294,10 +254,9 @@ pub(crate) fn run() -> Result<(), AppError> {
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-#[cfg_attr(not(feature = "legacy-egui"), allow(dead_code))]
-#[cfg_attr(
-    feature = "legacy-egui",
-    allow(dead_code, reason = "sorting modes are kept for the store API")
+#[allow(
+    dead_code,
+    reason = "store filtering preserves all supported sort modes"
 )]
 pub(crate) enum SortMode {
     #[default]
@@ -307,28 +266,7 @@ pub(crate) enum SortMode {
     Owner,
 }
 
-#[cfg_attr(not(feature = "legacy-egui"), allow(dead_code))]
-#[cfg_attr(
-    feature = "legacy-egui",
-    allow(dead_code, reason = "sorting modes are kept for the store API")
-)]
-impl SortMode {
-    pub(crate) fn label(self) -> &'static str {
-        match self {
-            Self::Key => "Key",
-            Self::Status => "Status",
-            Self::Story => "Story",
-            Self::Owner => "Owner",
-        }
-    }
-}
-
 #[derive(Debug, Clone, Default)]
-#[cfg_attr(not(feature = "legacy-egui"), allow(dead_code))]
-#[cfg_attr(
-    feature = "legacy-egui",
-    allow(dead_code, reason = "translation filters are kept for the store API")
-)]
 pub(crate) struct FilterState {
     search: String,
     status: String,
@@ -338,34 +276,6 @@ pub(crate) struct FilterState {
     owner: String,
     only_orphaned: bool,
     sort_mode: SortMode,
-}
-
-#[cfg_attr(not(feature = "legacy-egui"), allow(dead_code))]
-#[cfg_attr(
-    feature = "legacy-egui",
-    allow(dead_code, reason = "translation filters are kept for the store API")
-)]
-impl FilterState {
-    pub(crate) fn clear(&mut self) {
-        self.search.clear();
-        self.status.clear();
-        self.entry_type.clear();
-        self.story.clear();
-        self.quest.clear();
-        self.owner.clear();
-        self.only_orphaned = false;
-        self.sort_mode = SortMode::Key;
-    }
-
-    pub(crate) fn is_active(&self) -> bool {
-        !self.search.is_empty()
-            || !self.status.is_empty()
-            || !self.entry_type.is_empty()
-            || !self.story.is_empty()
-            || !self.quest.is_empty()
-            || !self.owner.is_empty()
-            || self.only_orphaned
-    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -382,25 +292,13 @@ pub(crate) struct EntryViewModel {
     validation_errors: Vec<String>,
 }
 
-#[cfg(feature = "legacy-egui")]
-#[allow(
-    dead_code,
-    reason = "legacy-egui remains a compatibility-only editor surface"
-)]
-#[path = "legacy_egui.rs"]
-mod legacy_egui;
-
 fn run_gui(root: PathBuf) -> Result<(), AppError> {
     dioxus_ui::run(root)
 }
 
 #[cfg(test)]
 mod tests {
-    #[cfg(feature = "legacy-egui")]
-    use super::legacy_egui::{ContentSection, ContentView, EditorApp, StoryReaderState};
     use super::*;
-    #[cfg(feature = "legacy-egui")]
-    use std::sync::mpsc::channel;
     use tempfile::tempdir;
 
     #[test]
@@ -892,70 +790,6 @@ mod tests {
             .contains_key(&edge));
     }
 
-    #[cfg(feature = "legacy-egui")]
-    #[test]
-    fn reader_navigation_supports_linear_history_and_restart() {
-        let mut reader = StoryReaderState::default();
-        reader.restart_at("story".into(), "start".into(), "en".into());
-        reader.advance_to("middle".into());
-        reader.advance_to("end".into());
-        assert_eq!(reader.current_node_id.as_deref(), Some("end"));
-        reader.back();
-        assert_eq!(reader.current_node_id.as_deref(), Some("middle"));
-        reader.restart_at("story".into(), "start".into(), "es".into());
-        assert!(reader.history.is_empty());
-        assert_eq!(reader.locale, "es");
-    }
-
-    #[cfg(feature = "legacy-egui")]
-    #[test]
-    fn reader_preview_uses_accepted_locale_and_falls_back_for_pending_text() {
-        let (_directory, store) = test_store();
-        let (_sender, receiver) = channel();
-        let mut app = EditorApp {
-            root: PathBuf::new(),
-            store: EditorSession::new(store),
-            locale: "es".into(),
-            filters: FilterState::default(),
-            show_content: true,
-            show_studio: true,
-            show_inspector: true,
-            show_metadata: false,
-            selected: None,
-            draft: String::new(),
-            draft_dirty: false,
-            notification: None,
-            external_change: receiver,
-            external_snapshot: None,
-            external_conflict: false,
-            show_compare: false,
-            confirm_reset: false,
-            selected_story_id: None,
-            selected_node_id: None,
-            content_search: String::new(),
-            content_view: ContentView::Reader,
-            content_dirty: false,
-            content_section: ContentSection::Stories,
-            selected_content_id: None,
-            reader: StoryReaderState::default(),
-        };
-        let accepted = app.localized_preview("dialog.test");
-        assert_eq!(accepted.text, "Hola {name}");
-        assert!(!accepted.used_fallback);
-        app.store
-            .targets
-            .get_mut("es")
-            .unwrap()
-            .entries
-            .get_mut("dialog.test")
-            .unwrap()
-            .status = WAITING.into();
-        let fallback = app.localized_preview("dialog.test");
-        assert_eq!(fallback.text, "Hello {name}");
-        assert!(fallback.used_fallback);
-        assert_eq!(fallback.status, WAITING);
-    }
-
     #[test]
     fn validation_requires_exact_placeholders_and_line_breaks() {
         let directory = tempdir().unwrap();
@@ -1161,43 +995,6 @@ mod tests {
         assert!(view.validation_errors.is_empty());
     }
 
-    #[cfg(feature = "legacy-egui")]
-    #[test]
-    fn loading_source_locale_keeps_source_text_available_to_inspector() {
-        let (_directory, store) = test_store();
-        let (_sender, receiver) = channel();
-        let mut app = EditorApp {
-            root: PathBuf::new(),
-            store: EditorSession::new(store),
-            locale: "en".into(),
-            filters: FilterState::default(),
-            show_content: true,
-            show_studio: false,
-            show_inspector: true,
-            show_metadata: false,
-            selected: Some("dialog.test".into()),
-            draft: String::new(),
-            draft_dirty: false,
-            notification: None,
-            external_change: receiver,
-            external_snapshot: None,
-            external_conflict: false,
-            show_compare: false,
-            confirm_reset: false,
-            selected_story_id: None,
-            selected_node_id: None,
-            content_search: String::new(),
-            content_view: ContentView::Graph,
-            content_dirty: false,
-            content_section: ContentSection::Stories,
-            selected_content_id: None,
-            reader: StoryReaderState::default(),
-        };
-        app.load_draft();
-        assert_eq!(app.draft, "Hello {name}");
-        assert!(!app.draft_dirty);
-    }
-
     #[test]
     fn manual_save_marks_translation_waiting_and_accept_requires_current_valid_text() {
         let (_directory, mut store) = test_store();
@@ -1209,44 +1006,6 @@ mod tests {
         assert_eq!(store.targets["es"].entries["dialog.test"].status, ON_REVIEW);
         store.accept("es", "dialog.test").unwrap();
         assert_eq!(store.targets["es"].entries["dialog.test"].status, ACCEPTED);
-    }
-
-    #[cfg(feature = "legacy-egui")]
-    #[test]
-    fn dirty_draft_blocks_selection_changes() {
-        let (_directory, store) = test_store();
-        let (_sender, receiver) = channel();
-        let mut app = EditorApp {
-            root: PathBuf::new(),
-            store: EditorSession::new(store),
-            locale: "es".into(),
-            filters: FilterState::default(),
-            show_content: true,
-            show_studio: false,
-            show_inspector: true,
-            show_metadata: false,
-            selected: Some("dialog.test".into()),
-            draft: "Local draft".into(),
-            draft_dirty: true,
-            notification: None,
-            external_change: receiver,
-            external_snapshot: None,
-            external_conflict: false,
-            show_compare: false,
-            confirm_reset: false,
-            selected_story_id: None,
-            selected_node_id: None,
-            content_search: String::new(),
-            content_view: ContentView::Graph,
-            content_dirty: false,
-            content_section: ContentSection::Stories,
-            selected_content_id: None,
-            reader: StoryReaderState::default(),
-        };
-        app.request_selection("dialog.other".into());
-        assert_eq!(app.selected.as_deref(), Some("dialog.test"));
-        assert_eq!(app.draft, "Local draft");
-        assert!(app.notification.is_some());
     }
 
     #[test]

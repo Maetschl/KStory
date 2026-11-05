@@ -10,7 +10,6 @@ pub(crate) struct EditorSession {
     history: History<StoreState>,
     preferences: AppPreferences,
     last_save_error: Option<String>,
-    observed: StoreState,
 }
 
 impl EditorSession {
@@ -23,7 +22,6 @@ impl EditorSession {
             history: History::new(state.clone(), preferences.history_limit()),
             preferences,
             last_save_error: None,
-            observed: state,
         }
     }
 
@@ -55,7 +53,10 @@ impl EditorSession {
         self.history.redo_label()
     }
 
-    #[cfg(feature = "legacy-egui")]
+    #[allow(
+        dead_code,
+        reason = "kept for persistence error reporting in future UI surfaces"
+    )]
     pub(crate) fn last_save_error(&self) -> Option<&str> {
         self.last_save_error.as_deref()
     }
@@ -78,7 +79,6 @@ impl EditorSession {
         if before != after {
             self.history
                 .record(label, before, after.clone(), coalesce_key);
-            self.observed = after.clone();
             if self.preferences.auto_save {
                 self.persist_after_edit(&after)?;
             }
@@ -91,9 +91,8 @@ impl EditorSession {
             return Ok(None);
         };
         state.apply_to(&mut self.store);
-        self.observed = StoreState::from_store(&self.store);
         if self.preferences.auto_save {
-            let current = self.observed.clone();
+            let current = StoreState::from_store(&self.store);
             self.persist_after_edit(&current)?;
         }
         Ok(Some(label))
@@ -104,9 +103,8 @@ impl EditorSession {
             return Ok(None);
         };
         state.apply_to(&mut self.store);
-        self.observed = StoreState::from_store(&self.store);
         if self.preferences.auto_save {
-            let current = self.observed.clone();
+            let current = StoreState::from_store(&self.store);
             self.persist_after_edit(&current)?;
         }
         Ok(Some(label))
@@ -116,7 +114,6 @@ impl EditorSession {
         self.store.save_all()?;
         let current = StoreState::from_store(&self.store);
         self.history.mark_saved(&current);
-        self.observed = current;
         self.last_save_error = None;
         Ok(())
     }
@@ -125,7 +122,6 @@ impl EditorSession {
         let report = self.store.sync()?;
         let current = StoreState::from_store(&self.store);
         self.history.reset(current.clone());
-        self.observed = current;
         self.last_save_error = None;
         Ok(report)
     }
@@ -143,25 +139,6 @@ impl EditorSession {
             self.save_explicit()?;
         }
         Ok(())
-    }
-
-    #[cfg(feature = "legacy-egui")]
-    pub(crate) fn observe_external_mutations(
-        &mut self,
-        label: impl Into<String>,
-        coalesce_key: Option<String>,
-    ) -> bool {
-        let current = StoreState::from_store(&self.store);
-        if current == self.observed {
-            return false;
-        }
-        self.history
-            .record(label, self.observed.clone(), current.clone(), coalesce_key);
-        self.observed = current.clone();
-        if self.preferences.auto_save {
-            let _ = self.persist_after_edit(&current);
-        }
-        true
     }
 
     fn persist_after_edit(&mut self, state: &StoreState) -> Result<(), AppError> {

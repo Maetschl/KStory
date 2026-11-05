@@ -10,8 +10,6 @@ mod migration;
 mod model;
 mod validation;
 
-#[cfg(feature = "legacy-egui")]
-pub use layout::node_type_color;
 pub use layout::{arrange_story_top_down, outgoing_node_ids};
 pub use model::*;
 
@@ -336,13 +334,6 @@ mod tests {
         let (_, issues) = arrange_story_top_down(&story);
         assert_eq!(issues.orphaned_nodes, vec!["orphan"]);
         assert_eq!(issues.cycle_edges, vec![("loop".into(), "loop".into())]);
-    }
-
-    #[cfg(feature = "legacy-egui")]
-    #[test]
-    fn node_colors_are_semantic() {
-        assert_ne!(node_type_color("dialogue"), node_type_color("choice"));
-        assert_eq!(node_type_color("end"), [99, 111, 125]);
     }
 
     #[test]
